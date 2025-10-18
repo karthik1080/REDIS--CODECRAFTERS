@@ -8,12 +8,14 @@ def main():
 
     # Uncomment this to pass the first stage
     #
-    server_socket = socket.create_server(("localhost", 6379), reuse_port=True)
-    connection, x= server_socket.accept() # wait for client
-    data = connection.recv(1024).decode()
-    for i in range(0,len(data)):
-        if i+4 < len(data) and data[i:i+4] == 'PING':
-            connection.sendall(b"+PONG\r\n")
+    server_address = ("localhost", 6379)
+    server_socket = socket.create_server(server_address, reuse_port=True)
+
+    client_conn, client_addr= server_socket.accept() # wait for client
+    print(f"connected to {client_addr}")
+
+    while client_conn.recv(4096):
+        client_conn.send(b"""+PONG\r\n""")
 
 if __name__ == "__main__":
     main()
