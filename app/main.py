@@ -1,5 +1,12 @@
 import socket  # noqa: F401
+import threading
 
+def handle_command(client: socket.socket):
+    while chunk := client.recv(4096):
+        if chunk == b"":
+            break
+        print(f"[CHUNK] ```\n{chunk.decode()}\n```")
+        client.sendall(b"+PONG\r\n")
 
 def main():
     # You can use print statements as follows for debugging, they'll be visible when running tests.
@@ -11,11 +18,10 @@ def main():
     server_address = ("localhost", 6379)
     server_socket = socket.create_server(server_address, reuse_port=True)
 
-    client_conn, client_addr= server_socket.accept() # wait for client
-    print(f"connected to {client_addr}")
 
-    while client_conn.recv(4096):
-        client_conn.send(b"""+PONG\r\n""")
+    while True:
+        client_conn, client_addr= server_socket.accept() # wait for client
+        threading.Thread(target=handle_command,args = (client_conn,)).start()
 
 if __name__ == "__main__":
     main()
