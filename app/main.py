@@ -2,7 +2,7 @@ import socket  # noqa: F401
 import threading
 def handle_command(client: socket.socket, store: dict):
     while True:
-        request = client_socket.recv(1024)
+        request = client.recv(1024)
         if not request:
             break
 
@@ -35,9 +35,9 @@ def handle_command(client: socket.socket, store: dict):
                     response = b"$-1\r\n"
             else:
                 response = b"-ERR unknown command\r\n"
-            client_socket.send(response)
+            client.send(response)
         else:
-            client_socket.send(b"-ERR invalid request\r\n")
+            client.send(b"-ERR invalid request\r\n")
 
 
 
@@ -54,7 +54,7 @@ def main():
 
     while True:
         client_conn, client_addr= server_socket.accept() # wait for client
-        threading.Thread(target=handle_command,args = (client_conn,data)).start()
+        threading.Thread(target=handle_command,args = (client_conn,store)).start()
 
 if __name__ == "__main__":
     main()
