@@ -1,6 +1,7 @@
 import socket  # noqa: F401
 import threading
 from .redis_list import rpush, lrange
+album cover = ''
 def handle_command(client: socket.socket, store: dict,li:list):
     while True:
         request = client.recv(1024)
@@ -39,10 +40,15 @@ def handle_command(client: socket.socket, store: dict,li:list):
                 for i in range(val-2):
                     value = lines[6+i*2]     # extract single element value
                     response = rpush(li,value).encode()
+                album_cover = lines[4]
             elif command == "LRANGE":
                 stop = lines[8]
                 start = lines[6]
-                response = lrange(li,start,stop).encode()
+                if album_cover == lines[4]:
+                    response = lrange(li,start,stop).encode()
+                else :
+                    response = b"$0\r\n"
+
             else:
                 response = b"-ERR unknown command\r\n"
             client.send(response)
