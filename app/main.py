@@ -1,6 +1,6 @@
 import socket  # noqa: F401
 import threading
-from .redis_list import rpush
+from .redis_list import rpush, lrange
 def handle_command(client: socket.socket, store: dict,li:list):
     while True:
         request = client.recv(1024)
@@ -36,10 +36,13 @@ def handle_command(client: socket.socket, store: dict,li:list):
                     response = b"$-1\r\n"
             elif command == "RPUSH":
                 val = int(lines[0][1]) # it gives *4 where 4 is the number of arguments the client has and im converting it into integer
-                for i in range(int(lines[0][1])-2):
-
+                for i in range(val-2):
                     value = lines[6+i*2]     # extract single element value
                     response = rpush(li,value).encode()
+            elif command == "LRANGE":
+                stop = lines[8]
+                start = lines[6]
+                response = lrange(li,start,stop).encode()
             else:
                 response = b"-ERR unknown command\r\n"
             client.send(response)
