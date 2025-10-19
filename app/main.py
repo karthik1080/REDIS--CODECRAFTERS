@@ -10,9 +10,9 @@ def handle_command(client: socket.socket, store: dict,li:list):
         data = request.decode().strip()
         if not data:
             continue
-
         if data.startswith("*"):
             lines = data.split("\r\n")
+            print (lines)
             command = lines[2].upper()
             if command == "PING":
                 response = b"+PONG\r\n"
@@ -35,8 +35,11 @@ def handle_command(client: socket.socket, store: dict,li:list):
                 else:
                     response = b"$-1\r\n"
             elif command == "RPUSH":
-                value = lines[6]     # extract single element value
-                response = rpush(li,value).encode()
+                val = int(lines[0][1]) # it gives *4 where 4 is the number of arguments the client has and im converting it into integer
+                for i in range(int(lines[0][1])-2):
+
+                    value = lines[6+i*2]     # extract single element value
+                    response = rpush(li,value).encode()
             else:
                 response = b"-ERR unknown command\r\n"
             client.send(response)
