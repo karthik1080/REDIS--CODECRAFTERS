@@ -1,6 +1,7 @@
 import socket  # noqa: F401
 import threading
-def handle_command(client: socket.socket, store: dict):
+from redis_list import rpush
+def handle_command(client: socket.socket, store: dict,li:list):
     while True:
         request = client.recv(1024)
         if not request:
@@ -33,6 +34,9 @@ def handle_command(client: socket.socket, store: dict):
                     response = f"${len(value)}\r\n{value}\r\n".encode()
                 else:
                     response = b"$-1\r\n"
+            elif command == "RPUSH":
+                value = lines[6]     # extract single element value
+                response = rpush(store,value).encode()
             else:
                 response = b"-ERR unknown command\r\n"
             client.send(response)
@@ -51,7 +55,7 @@ def main():
     server_address = ("localhost", 6379)
     server_socket = socket.create_server(server_address, reuse_port=True)
     store = {}
-
+    li = []
     while True:
         client_conn, client_addr= server_socket.accept() # wait for client
         threading.Thread(target=handle_command,args = (client_conn,store)).start()
