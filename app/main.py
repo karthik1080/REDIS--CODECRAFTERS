@@ -1,6 +1,6 @@
 import socket  # noqa: F401
 import threading
-from redis_list import rpush
+from .redis_list import rpush
 def handle_command(client: socket.socket, store: dict,li:list):
     while True:
         request = client.recv(1024)
