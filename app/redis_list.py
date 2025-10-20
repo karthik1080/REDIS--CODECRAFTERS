@@ -1,214 +1,146 @@
 import time
 import threading
+from app.resp import resp_encoder
 
-# Global dictionary to track blocked clients
-blocked = {}
-blocked_lock = threading.Lock()
+#####################    LIST OPERATIONS     #####################
+store = {}
+store_list = {}
 
-def rpush(store: dict, key: str, values: list) -> str:
-    """Append values to the end of the list stored at key."""
-    if key not in store:
-        store[key] = []
-    if not isinstance(store[key], list):
-        return "-ERR wrong type\r\n"
-    for v in values:
-        store[key].append(v)
-    wake_waiters_for_key(store, key)
-    return f":{len(store[key])}\r\n"
+def expire_key(key, expire_time):
+    """Expires a key after a certain time."""
+    time.sleep(expire_time)
+    if key in store:
+        del store[key]
 
-def lpush(store: dict, key: str, values: list) -> str:
-    """Insert values at the head of the list stored at key."""
-    if key not in store:
-        store[key] = []
-    if not isinstance(store[key], list):
-        return "-ERR wrong type\r\n"
-    for v in (values):
-        store[key].insert(0, v)
-    wake_waiters_for_key(store, key)
-    return f":{len(store[key])}\r\n"
+def setter(info):
+    """Sets the value for a given key in the in-memory store."""
+    if len(info) == 2:
+        key, value = info
+        store[key] = value
+    elif info[2] == "PX":
+        key, value, _, expire_time = info
+        store[key] = value
+        # Set expiration time in milliseconds
+        expire_time = int(expire_time) / 1000.0
+        threading.Thread(target=expire_key, args=(key, expire_time)).start()
 
-def lpop(store: dict, key: str, count: int = 1) -> str:
-    """Pop elements from the head of the list."""
-    if key not in store or not isinstance(store[key], list) or len(store[key]) == 0:
-        return "*0\r\n"
+def getter(key):
+    """Gets the value for a given key from the in-memory store."""
+    return store.get(key)
 
-    if count == 1:
-        value = store[key].pop(0)
-        return f"${len(value)}\r\n{value}\r\n"
+def rpush(info, blocked):
+    """Appends values to a list stored at key."""
+    key = info[0]
+    values = info[1:]
+    if key not in store_list:
+        store_list[key] = []
+    store_list[key].extend(values)
+    new_len = len(store_list[key])
+    # honour blpop blocked connections
+    print(blocked)
+    while key in blocked and blocked[key] and len(store_list[key]) > 0:
 
-    popped = []
-    for _ in range(count):
-        if store[key]:
-            popped.append(store[key].pop(0))
-    resp = f"*{len(popped)}\r\n"
-    for item in popped:
-        resp += f"${len(item)}\r\n{item}\r\n"
-    return resp
+        connection = blocked[key].pop(0)
+        value = store_list[key].pop(0)
+        response = resp_encoder([key, value])
+        try:
+            connection.sendall(response)
+        except:
+            pass
 
-def llen(store: dict, key: str) -> str:
-    """Return length of the list."""
-    if key not in store or not isinstance(store[key], list):
-        return ":0\r\n"
-    return f":{len(store[key])}\r\n"
+    return new_len
 
-def lrange(store: dict, key: str, start: int, stop: int) -> str:
-    """Return elements between start and stop inclusive, handles negative indices."""
-    if key not in store or not isinstance(store[key], list):
-        return "*0\r\n"
+def lrange(info):
+    """Returns a range of elements from a list stored at key."""
+    key = info[0]
+    start = int(info[1])
+    end = int(info[2])
+    # Adjust end for Python's slicing
+    if end < 0:
+        end = len(store_list[key]) + end
+    if key not in store_list or start >= len(store_list[key]) or (end > 0 and end < start):
+        return []
+    else:
+        end += 1
+    return store_list[key][start:min(end, len(store_list[key]))] if end is not None else store_list[key][end]
 
-    arr = store[key]
-    n = len(arr)
+def lpush(info):
+    """Prepends values to a list stored at key."""
+    key = info[0]
+    values = info[1:]
+    if key not in store_list:
+        store_list[key] = []
+    for value in values:
+        store_list[key].insert(0, value)
+    return len(store_list[key])
 
-    if start < 0:
-        start += n
-    if stop < 0:
-        stop += n
+def llen(key):
+    """Returns the length of the list stored at key."""
+    if key in store_list:
+        return len(store_list[key])
+    return 0
 
-    start = max(start, 0)
-    stop = min(stop, n - 1)
+def lpop(info):
+    """Removes and returns the first element of the list stored at key."""
+    if len(info) == 1:
+        key = info[0]
+        if key in store_list and store_list[key]:
+            return store_list[key].pop(0)
+        return None
+    elif len(info) == 2:
+        # print(info)
+        key = info[0]
+        count = int(info[1])
+        if key in store_list and store_list[key]:
+            popped_elements = []
+            for _ in range(min(count, len(store_list[key]))):
+                popped_elements.append(store_list[key].pop(0))
+            return popped_elements
+        return []
 
-    if start > stop or start >= n:
-        return "*0\r\n"
-
-    sublist = arr[start:stop + 1]
-    resp = f"*{len(sublist)}\r\n"
-    for item in sublist:
-        resp += f"${len(item)}\r\n{item}\r\n"
-    return resp
-
-def blpop(store: dict, key: str, timeout: float) -> str:
-    """Blocking LPOP, waits until element available or timeout."""
-    if key not in store:
-        store[key] = []
-
-    start_time = time.time()
-    while True:
-        if store[key]:
-            value = store[key].pop(0)
-            return f"*2\r\n${len(key)}\r\n{key}\r\n${len(value)}\r\n{value}\r\n"
-
-        if timeout == 0:
-            # register blocking client
-            event = threading.Event()
-            with blocked_lock:
-                blocked.setdefault(key, []).append(event)
-            event.wait()
-        else:
-            elapsed = time.time() - start_time
-            if elapsed >= timeout:
-                return "*-1\r\n"
-            time.sleep(0.01)  # brief sleep
-
-def wake_waiters_for_key(store: dict, key: str):
-    """Wake up blocked clients for a key after RPUSH/LPUSH."""
-    with blocked_lock:
-        if key in blocked:
-            for event in blocked[key]:
-                event.set()
-            blocked[key] = []
-
-
-'''import time
-import threading
-
-def rpush(store: dict, key: str, values: list) -> str:
+def blpop(info, connection, blocked):
     """
-    Append values to the end of the list stored at key.
+    BLPOP with timeout support.
+    info: [key, timeout_in_seconds]
     """
-    if key not in store:
-        store[key] = []
-    if not isinstance(store[key], list):
-        return "-ERR wrong type\r\n"
-    for v in values:
-        store[key].append(v)
-    return f":{len(store[key])}\r\n"
+    key = info[0]
+    timeout = float(info[1])  # in seconds
 
+    # If the list already has elements, pop immediately
+    if key in store_list and len(store_list[key]) > 0:
+        return [key, store_list[key].pop(0)]
 
-def lpush(store: dict, key: str, values: list) -> str:
-    """
-    Insert values at the head of the list stored at key.
-    LPUSH inserts elements from left, so last value appears first.
-    Example: LPUSH key a b -> list becomes ["b", "a"]
-    """
-    if key not in store:
-        store[key] = []
-    if not isinstance(store[key], list):
-        return "-ERR wrong type\r\n"
-    for v in values:
-        store[key].insert(0, v)
-    return f":{len(store[key])}\r\n"
+    # Otherwise, block this connection
+    if key not in blocked:
+        blocked[key] = []
+    blocked[key].append(connection)
 
+    # If timeout > 0, schedule a timer to unblock the client after timeout
+    if timeout > 0:
+        def timeout_unblock():
+            time.sleep(timeout)
+            # Connection might have been unblocked by an RPUSH before timeout
+            if key in blocked and connection in blocked[key]:
+                blocked[key].remove(connection)
+                try:
+                    # Send RESP null array to indicate timeout: "*-1\r\n"
+                    connection.sendall(b"*-1\r\n")
+                except:
+                    pass  # client may have disconnected
 
-def lpop(store: dict, key: str, count: int = 1) -> str:
-    """
-    Pop elements from the start (head) of the list.
-    Supports optional count like: LPOP key 2
-    Returns RESP Array of popped elements.
-    """
-    if key not in store or not isinstance(store[key], list) or len(store[key]) == 0:
-        return f"*0\r\n"
+        # Run timer in a daemon thread
+        threading.Thread(target=timeout_unblock, daemon=True).start()
 
-    popped = []
-    if count == 1:
-        value = store[key].pop(0)
-        return f"${len(value)}\r\n{value}\r\n"
-    for _ in range(count):
-        if store[key]:
-            popped.append(store[key].pop(0))
-            print(popped)
+    # Return None to indicate client is blocked for now
+    return None
 
-    resp = f"*{len(popped)}\r\n"
-    for item in popped:
-        resp += f"${len(item)}\r\n{item}\r\n"
-    return resp
+def type_getter_lists(key):
+    """Returns the type of the value stored at key."""
+    if key in store:
+        return "string"
+    elif key in store_list:
+        return "list"
+    else:
+        return "none"
 
-
-def llen(store: dict, key: str) -> str:
-    """
-    Return the length of the list.
-    """
-    if key not in store or not isinstance(store[key], list):
-        return ":0\r\n"
-    return f":{len(store[key])}\r\n"
-
-
-def lrange(store: dict, key: str, start: int, stop: int) -> str:
-    """
-    Return elements between start and stop (inclusive).
-    Supports negative indexes properly.
-    """
-    if key not in store or not isinstance(store[key], list):
-        return "*0\r\n"
-
-    arr = store[key]
-    n = len(arr)
-
-    if start < 0:
-        start = n + start
-    if stop < 0:
-        stop = n + stop
-
-    start = max(start, 0)
-    stop = min(stop, n - 1)
-
-    if start > stop or start >= n:
-        return "*0\r\n"
-
-    sublist = arr[start:stop + 1]
-
-    resp = f"*{len(sublist)}\r\n"
-    for item in sublist:
-        resp += f"${len(item)}\r\n{item}\r\n"
-    return resp
-
-def blpop(store, key, timeout):
-    if timeout ==0:
-
-    start_time = time.time()
-    while time.time() - start_time < timeout:
-        if key in store and len(store[key]) > 0:
-            value = store[key].pop(0)
-            return f"*2\r\n${len(key)}\r\n{key}\r\n${len(value)}\r\n{value}\r\n"
-        time.sleep(0.05)  # sleep briefly, avoid CPU hog
-    return "*-1\r\n"  # timeout: null array
-'''
+#####################    END LIST OPERATIONS     #####################

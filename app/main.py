@@ -1,145 +1,181 @@
-import socket
+import socket  # noqa: F401
 import threading
-from .redis_list import rpush, lpush, lpop, llen, lrange, blpop
-from .redis_streams import get_type, xadd, xrange_cmd, xread
-import time
-def handle_command(client: socket.socket, store: dict):
-    while True:
-        request = client.recv(4096)
-        if not request:
-            break
+#from app.resp import resp_parser, resp_encoder, simple_string_encoder, error_encoder
+from .redis_list import (
+    getter,
+    setter,
+    rpush,
+    lrange,
+    lpush,
+    llen,
+    lpop,
+    blpop,
+    type_getter_lists,
+)
+from .redis_streams import xadd, type_getter_streams, xrange, xread, blocks_xread
 
-        data = request.decode().strip()
-        if not data:
-            continue
-        if data.startswith("*"):
-            lines = data.split("\r\n")
-            command = lines[2].upper()
-            print(lines)
-            # ---------------------- STRING COMMANDS ----------------------
-            if command == "PING":
-                response = b"+PONG\r\n"
-            elif command == "ECHO":
-                message = lines[4]
-                response = f"${len(message)}\r\n{message}\r\n".encode()
-            elif command == "SET":
-                key = lines[4]
-                value = lines[6]
-                if len(lines) > 8 and lines[8].lower() == "px":
-                    ttl = int(lines[10])
-                    threading.Timer(ttl / 1000, store.pop, args=[key]).start()
-                store[key] = value
-                response = b"+OK\r\n"
-            elif command == "GET":
-                key = lines[4]
-                value = store.get(key, None)
-                if value is not None:
-                    response = f"${len(value)}\r\n{value}\r\n".encode()
+def resp_parser(data):
+    if data.startswith(b"*"):
+        parts = data.split(b"\r\n")
+        num_elements = int(parts[0][1:])
+        elements = []
+        index = 1
+        for _ in range(num_elements):
+            length = int(parts[index][1:])
+            element = parts[index + 1][:length].decode()
+            print(f"Parsed element: {element}")
+            elements.append(element)
+            index += 2
+        return elements
+    return []
+
+def resp_encoder(data):
+    if data is None:
+        return b"$-1\r\n"
+    elif isinstance(data, list):
+        out = f"*{len(data)}\r\n".encode()
+        for item in data:
+            out += resp_encoder(item)
+        return out
+    elif isinstance(data, str):
+        return_string = "$"
+        return_string += str(len(data)) + "\r\n"
+        return_string += data + "\r\n"
+        return return_string.encode()
+    elif isinstance(data, int):
+        return_string = ":" + str(data) + "\r\n"
+        return return_string.encode()
+    return b"$-1\r\n"
+
+def simple_string_encoder(message):
+    return f"+{message}\r\n".encode()
+
+def error_encoder(message):
+    return f"-{message}\r\n".encode()
+
+blocked = {}
+blocked_xread = {}
+
+
+def handle_client(connection):
+    with connection:
+        while True:
+            data = connection.recv(1024)
+            if not data:
+                break
+            print(f"Received data: {data}")
+
+            decoded_data = resp_parser(data)
+            # PING
+            if decoded_data[0] == "PING":
+                response = simple_string_encoder("PONG")
+                connection.sendall(response)
+            # ECHO
+            elif decoded_data[0].upper() == "ECHO" and len(decoded_data) > 1:
+                response = resp_encoder(decoded_data[1])
+                connection.sendall(response)
+            # GET
+            elif decoded_data[0].upper() == "GET":
+                response = resp_encoder(getter(decoded_data[1]))
+                print(f"GET response: {response}")
+                connection.sendall(response)
+            # SET
+            elif decoded_data[0].upper() == "SET" and len(decoded_data) > 2:
+                setter(decoded_data[1:])
+                response = "+OK\r\n".encode()
+                connection.sendall(response)
+            # RPUSH
+            elif decoded_data[0].upper() == "RPUSH" and len(decoded_data) > 2:
+                # For simplicity, we treat RPUSH similar to SET in this implementation
+                size = rpush(decoded_data[1:], blocked)
+                response = resp_encoder(size)
+                connection.sendall(response)
+            # LRANGE
+            elif decoded_data[0].upper() == "LRANGE" and len(decoded_data) > 3:
+                response = resp_encoder(lrange(decoded_data[1:]))
+                connection.sendall(response)
+            # LPUSH
+            elif decoded_data[0].upper() == "LPUSH":
+                size = lpush(decoded_data[1:])
+                response = resp_encoder(size)
+                connection.sendall(response)
+            # LLEN
+            elif decoded_data[0].upper() == "LLEN" and len(decoded_data) > 1:
+                size = llen(decoded_data[1])
+                response = resp_encoder(size)
+                connection.sendall(response)
+            # LPOP
+            elif decoded_data[0].upper() == "LPOP" and len(decoded_data) > 1:
+                response = resp_encoder(lpop(decoded_data[1:]))
+                connection.sendall(response)
+            # BLPOP
+            elif decoded_data[0].upper() == "BLPOP" and len(decoded_data) > 2:
+                response = blpop(decoded_data[1:], connection, blocked)
+                if response is None:
+                    continue
                 else:
-                    response = b"$-1\r\n"
-
-            # ---------------------- LIST COMMANDS ----------------------
-            elif command == "RPUSH":
-                key = lines[4]
-                num_args = int(lines[0][1:])
-                values = [lines[i] for i in range(6, 6 + (num_args - 2) * 2, 2)]
-                response = rpush(store, key, values).encode()
-
-            elif command == "LPUSH":
-                key = lines[4]
-                num_args = int(lines[0][1:])
-                values = [lines[i] for i in range(6, 6 + (num_args - 2) * 2, 2)]
-                response = lpush(store, key, values).encode()
-
-            elif command == "LPOP":
-                key = lines[4]
-                count = int(lines[6]) if len(lines) > 6 else 1
-                response = lpop(store, key, count).encode()
-
-            elif command == "LLEN":
-                key = lines[4]
-                response = llen(store, key).encode()
-
-            elif command == "LRANGE":
-                key = lines[4]
-                start = int(lines[6])
-                stop = int(lines[8])
-                response = lrange(store, key, start, stop).encode()
-
-            elif command == "BLPOP":
-                key = lines[4]
-                timeout = float(lines[6])
-                response = blpop(store, key, timeout).encode()
-            # ---------------------- STREAM COMMANDS ----------------------
-            elif command == "TYPE":
-                key = lines[4]
-                response = get_type(store, key).encode()
-            elif command == "XADD":
-                key = lines[4]
-                entry_id = lines[6]
-                fields = [lines[i] for i in range(8, len(lines),2)]
-                response = xadd(store, key, entry_id, fields).encode()
-            elif command == "XRANGE":
-                stream_key = lines[4]
-                start_id = lines[6]
-                end_id = lines[8]
-                response = xrange_cmd(store, stream_key, start_id, end_id).encode()
-            elif command == "XREAD":
-                remaining = lines[5:]
-                block_time_ms = None
-
-                # Check if BLOCK is specified
-                if lines[4].upper() == "BLOCK":
-                    block_time_ms = int(lines[6])
-                    remaining = lines[7:]
-                num_streams = len(remaining) // 4
-                stream_keys = remaining[1:num_streams*2:2]
-                entry_ids = remaining[num_streams*2+1::2]
-
-                if block_time_ms is not None:
-                    timeout_sec = block_time_ms / 1000
-                    sleep_interval = 0.05  # 50ms
-                    elapsed = 0
-                    while True:
-                        resp_list = []
-                        for stream_key, entry_id in zip(stream_keys, entry_ids):
-                            resp_list.append(xread(store, stream_key, entry_id))
-                        # Check if we got any new entries
-                        any_entries = any("*2\r\n" in r for r in resp_list)
-                        if any_entries or elapsed >= timeout_sec:
-                            break
-                        time.sleep(sleep_interval)
-                        elapsed += sleep_interval
+                    response = resp_encoder(response)
+                    connection.sendall(response)
+            # TYPE
+            elif decoded_data[0].upper() == "TYPE" and len(decoded_data) > 1:
+                response = type_getter_lists(decoded_data[1])
+                print(f"TYPE response: {response}")
+                if response == "none":
+                    response2 = simple_string_encoder(
+                        type_getter_streams(decoded_data[1])
+                    )
+                    connection.sendall(response2)
                 else:
-                    resp_list = []
-                    for stream_key, entry_id in zip(stream_keys, entry_ids):
-                        resp_list.append(xread(store, stream_key, entry_id))
-                if not resp_list or (block_time_ms is not None and not any("*2\r\n" in r for r in resp_list)):
-                    response = "*-1\r\n"  # null array
+                    response = simple_string_encoder(response)
+                    connection.sendall(response)
+
+            # XADD
+            elif decoded_data[0].upper() == "XADD" and len(decoded_data) > 4:
+                result = xadd(decoded_data[1:], blocked_xread)
+                print(f"XADD result: {result}")
+                if result[0] == "id":
+                    response = resp_encoder(result[1])
+                    connection.sendall(response)
                 else:
-                    response = f"*{len(resp_list)}\r\n" + "".join(resp_list)
-                response = response.encode()
-
-
+                    response = error_encoder(result[1])
+                    connection.sendall(response)
+            # XRANGE
+            elif decoded_data[0].upper() == "XRANGE" and len(decoded_data) >= 4:
+                # print(f"XRANGE called with data: {decoded_data}")
+                result = xrange(decoded_data[1:])
+                response = resp_encoder(result)
+                connection.sendall(response)
+            # XREAD STREAMS
+            elif decoded_data[0].upper() == "XREAD" and len(decoded_data) >= 4:
+                if decoded_data[1].upper() == "BLOCK":
+                    result = blocks_xread(decoded_data[2:], connection, blocked_xread)
+                    if result is None:
+                        continue
+                    # response = resp_encoder(result)
+                else:
+                    result = xread(decoded_data[2:])
+                    response = resp_encoder(result)
+                    connection.sendall(response)
+            # ERR
             else:
-                response = b"-ERR unknown command\r\n"
-
-            client.send(response)
-        else:
-            client.send(b"-ERR invalid request\r\n")
+                response = error_encoder("ERR")
+                connection.sendall(response)
 
 
 def main():
-    print("Redis server starting...")
+    # You can use print statements as follows for debugging, they'll be visible when running tests.
+    print("Logs from your program will appear here!")
 
-    server_address = ("localhost", 6379)
-    server_socket = socket.create_server(server_address, reuse_port=True)
-
-    store = {}
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server_socket.bind(("localhost", 6379))
+    server_socket.listen(10)
 
     while True:
-        client_conn, _ = server_socket.accept()
-        threading.Thread(target=handle_command, args=(client_conn, store), daemon=True).start()
+        client_socket, _ = server_socket.accept()
+        client_thread = threading.Thread(target=handle_client, args=(client_socket,))
+        client_thread.daemon = True
+        client_thread.start()
 
 
 if __name__ == "__main__":
