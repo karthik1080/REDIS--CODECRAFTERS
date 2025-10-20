@@ -165,13 +165,25 @@ def xread(info):
     return result
 
 def blocks_xread(info, connection, blocked_xread):
-    res = xread(info[2:])
-    if res != []:
-        return res
-    timeout = float(info[0])  # in milliseconds
-    timeout = timeout / 1000  # in seconds
     key = info[2]
     id = info[3]
+
+    # handle $ specially
+    if id == "$":
+        if key in streams and streams[key]:
+            id = streams[key][-1]["id"]  # latest current entry
+        else:
+            id = "0-0"  # empty stream
+
+        res = xread([key, id])
+    else:
+        res = xread(info[2:])
+
+    if res != []:
+        return res
+
+    timeout = float(info[0])  # in milliseconds
+    timeout = timeout / 1000  # in seconds
 
     if key not in blocked_xread:
         blocked_xread[key] = []
