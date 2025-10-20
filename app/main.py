@@ -1,4 +1,106 @@
-import socket  # noqa: F401
+import socket
+import threading
+from .redis_list import rpush, lpush, lpop, llen, lrange
+
+def handle_command(client: socket.socket, store: dict):
+    while True:
+        request = client.recv(1024)
+        if not request:
+            break
+
+        data = request.decode().strip()
+        if not data:
+            continue
+
+        if data.startswith("*"):
+            lines = data.split("\r\n")
+            command = lines[2].upper()
+
+            # ---------------------- STRING COMMANDS ----------------------
+            if command == "PING":
+                response = b"+PONG\r\n"
+
+            elif command == "ECHO":
+                message = lines[4]
+                response = f"${len(message)}\r\n{message}\r\n".encode()
+
+            elif command == "SET":
+                key = lines[4]
+                value = lines[6]
+                store[key] = value
+                response = b"+OK\r\n"
+
+            elif command == "GET":
+                key = lines[4]
+                value = store.get(key)
+                if value is not None:
+                    response = f"${len(value)}\r\n{value}\r\n".encode()
+                else:
+                    response = b"$-1\r\n"
+
+            # ---------------------- LIST COMMANDS ----------------------
+            elif command == "RPUSH":
+                key = lines[4]
+                num_args = int(lines[0][1:])
+                values = []
+                for i in range(6, 6 + (num_args - 2) * 2, 2):
+                    values.append(lines[i])
+                response = rpush(store, key, values).encode()
+
+            elif command == "LPUSH":
+                key = lines[4]
+                num_args = int(lines[0][1:])
+                values = []
+                for i in range(6, 6 + (num_args - 2) * 2, 2):
+                    values.append(lines[i])
+                response = lpush(store, key, values).encode()
+
+            elif command == "LPOP":
+                key = lines[4]
+                if len(lines) > 6:
+                    count = int(lines[6])
+                else:
+                    count = 1
+                response = lpop(store, key, count).encode()
+
+            elif command == "LLEN":
+                key = lines[4]
+                response = llen(store, key).encode()
+
+            elif command == "LRANGE":
+                key = lines[4]
+                start = int(lines[6])
+                stop = int(lines[8])
+                response = lrange(store, key, start, stop).encode()
+
+            else:
+                response = b"-ERR unknown command\r\n"
+
+            client.send(response)
+
+        else:
+            client.send(b"-ERR invalid request\r\n")
+
+
+def main():
+    print("Redis server starting...")
+
+    server_address = ("localhost", 6379)
+    server_socket = socket.create_server(server_address, reuse_port=True)
+
+    store = {}  # shared store for strings and lists
+
+    while True:
+        client_conn, _ = server_socket.accept()
+        threading.Thread(target=handle_command, args=(client_conn, store)).start()
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+'''import socket  # noqa: F401
 import threading
 from .redis_list import rpush, lrange
 album cover = ''
@@ -57,6 +159,7 @@ def handle_command(client: socket.socket, store: dict,li:list):
 
 
 
+
 def main():
     # You can use print statements as follows for debugging, they'll be visible when running tests.
 
@@ -74,3 +177,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+'''
