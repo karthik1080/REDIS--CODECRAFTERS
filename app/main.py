@@ -2,7 +2,7 @@ import socket
 import threading
 from .redis_list import rpush, lpush, lpop, llen, lrange, blpop
 from .redis_streams import get_type, xadd, xrange_cmd, xread
-
+import time
 def handle_command(client: socket.socket, store: dict):
     while True:
         request = client.recv(4096)
