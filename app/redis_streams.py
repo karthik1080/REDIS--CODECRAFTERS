@@ -44,21 +44,21 @@ def xadd(store: Dict, stream_key: str, entry_id: str, fields: List[str]) -> str:
     Returns the entry ID as a RESP bulk string.
     """
     if entry_id == "*":
-    ms_time = int(time.time() * 1000)  # current unix time in ms
+        ms_time = int(time.time() * 1000)  # current unix time in ms
 
-    if stream_key not in store or not store[stream_key]:
-        # new stream or no entries yet → start seq at 0
-        entry_id = f"{ms_time}-0"
-    else:
-        # get last entry
-        last_entry_id = store[stream_key][-1]['id']
-        last_ms, last_seq = map(int, last_entry_id.split('-'))
-        if last_ms == ms_time:
-            # same ms → increment sequence
-            entry_id = f"{ms_time}-{last_seq + 1}"
-        else:
-            # new ms → reset sequence
+        if stream_key not in store or not store[stream_key]:
+            # new stream or no entries yet → start seq at 0
             entry_id = f"{ms_time}-0"
+        else:
+            # get last entry
+            last_entry_id = store[stream_key][-1]['id']
+            last_ms, last_seq = map(int, last_entry_id.split('-'))
+            if last_ms == ms_time:
+                # same ms → increment sequence
+                entry_id = f"{ms_time}-{last_seq + 1}"
+            else:
+                # new ms → reset sequence
+                entry_id = f"{ms_time}-0"
 
     if entry_id == "0-0":
         return "-ERR The ID specified in XADD must be greater than 0-0\r\n"
