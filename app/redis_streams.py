@@ -106,6 +106,8 @@ def xrange_cmd(store, stream_key, start_id, end_id):
 
     if stream_key not in store or not isinstance(store[stream_key], list):
         return "*0\r\n"
+    if start_id == "-":
+        start_id = "0-0"
     if "-" not in start_id:
         start_id = f"{start_id}-0"
     if "-" not in end_id:

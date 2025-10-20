@@ -1,7 +1,7 @@
 import socket
 import threading
 from .redis_list import rpush, lpush, lpop, llen, lrange, blpop
-from .redis_streams import get_type,xadd
+from .redis_streams import get_type, xadd, xrange_cmd
 
 def handle_command(client: socket.socket, store: dict):
     while True:
