@@ -1,24 +1,5 @@
-'''def rpush(li: list , value: str) -> str:
-    li.append(value)
-    return f":{len(li)}\r\n"
-
-
-def lrange(li:list, start:int,stop:int)->list:
-    """Return a sublist in RESP format"""
-    start = int(start)
-    stop = int(stop)
-    if stop <0:
-        sublist = li[start:stop]
-    else:
-        sublist = li[start:stop+1]
-    print(li)
-    resp = f"*{len(sublist)}\r\n"
-    for item in sublist:
-        resp += f"${len(item)}\r\n{item}\r\n"
-    return resp
-
-'''
-# redis_list.py
+import time
+import threading
 
 def rpush(store: dict, key: str, values: list) -> str:
     """
@@ -105,3 +86,12 @@ def lrange(store: dict, key: str, start: int, stop: int) -> str:
     for item in sublist:
         resp += f"${len(item)}\r\n{item}\r\n"
     return resp
+
+def blpop(store, key, timeout):
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        if key in store and len(store[key]) > 0:
+            value = store[key].pop(0)
+            return f"*2\r\n${len(key)}\r\n{key}\r\n${len(value)}\r\n{value}\r\n"
+        time.sleep(0.05)  # sleep briefly, avoid CPU hog
+    return "*-1\r\n"  # timeout: null array
