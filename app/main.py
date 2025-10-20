@@ -1,7 +1,7 @@
 import socket
 import threading
 from .redis_list import rpush, lpush, lpop, llen, lrange, blpop
-from .redis_streams import get_type
+from .redis_streams import get_type,xadd
 
 def handle_command(client: socket.socket, store: dict):
     while True:
@@ -74,6 +74,12 @@ def handle_command(client: socket.socket, store: dict):
             elif command == "TYPE":
                 key = lines[4]
                 response = get_type(store, key).encode()
+            elif command == "XADD":
+                key = lines[4]
+                entry_id = lines[6]
+                fields = [lines[i] for i in range(7, len(lines))]  # all remaining are fields
+                print(fields, 'hi', lines)
+                response = xadd(store, key, entry_id, fields).encode()
 
             else:
                 response = b"-ERR unknown command\r\n"

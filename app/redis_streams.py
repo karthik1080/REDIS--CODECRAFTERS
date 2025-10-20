@@ -1,4 +1,5 @@
-# redis_type.py
+# redis_streams.py
+from typing import Dict, List
 
 def get_type(store: dict, key: str) -> str:
     """
@@ -22,15 +23,40 @@ def get_type(store: dict, key: str) -> str:
     if isinstance(value, str):
         return "+string\r\n"
     elif isinstance(value, list):
-        return "+list\r\n"
+        # Could be a list or stream, check structure
+        if len(value) > 0 and isinstance(value[0], dict) and "id" in value[0]:
+            return "+stream\r\n"
+        else:
+            return "+list\r\n"
     elif isinstance(value, set):
         return "+set\r\n"
     elif isinstance(value, dict):
-        # We'll assume dict can be hash, zset, stream, or vectorset depending on how you implement them later
-        # For now, just call it a hash
         return "+hash\r\n"
     elif isinstance(value, tuple):
-        # Example: zset or vectorset placeholder
-        return "+zset\r\n"  # or +vectorset later if you store differently
+        return "+zset\r\n"
     else:
         return "+unknown\r\n"
+
+def xadd(store: Dict, stream_key: str, entry_id: str, fields: List[str]) -> str:
+    """
+    Add an entry to a Redis stream.
+    fields: list like [field1, value1, field2, value2, ...]
+    Returns the entry ID as a RESP bulk string.
+    """
+    if stream_key not in store:
+        store[stream_key] = []  # create a new stream
+
+    if not isinstance(store[stream_key], list):
+        return "-ERR wrong type\r\n"
+
+    # Convert list of fields into a dictionary for this entry
+    entry = {"id": entry_id}
+    for i in range(0, len(fields), 2):
+        key = fields[i]
+        value = fields[i + 1] if i + 1 < len(fields) else ""
+        entry[key] = value
+
+    store[stream_key].append(entry)
+
+    # Return the entry ID in RESP bulk string format
+    return f"${len(entry_id)}\r\n{entry_id}\r\n"
