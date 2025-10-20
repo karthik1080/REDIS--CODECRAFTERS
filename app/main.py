@@ -86,20 +86,38 @@ def handle_command(client: socket.socket, store: dict):
                 response = xrange_cmd(store, stream_key, start_id, end_id).encode()
             elif command == "XREAD":
                 remaining = lines[5:]
-                print(remaining)
+                block_time_ms = None
+
+                # Check if BLOCK is specified
+                if lines[4].upper() == "BLOCK":
+                    block_time_ms = int(lines[6])
+                    remaining = lines[7:]
                 num_streams = len(remaining) // 4
-                print(num_streams)
                 stream_keys = remaining[1:num_streams*2:2]
                 entry_ids = remaining[num_streams*2+1::2]
-                print(stream_keys)
-                print(entry_ids)
 
-                resp_list = []
-                for stream_key, entry_id in zip(stream_keys, entry_ids):
-                    resp_list.append(xread(store, stream_key, entry_id))
-
-                response = f"*{len(resp_list)}\r\n"
-                response += "".join(resp_list)        # concatenate all streams
+                if block_time_ms is not None:
+                    timeout_sec = block_time_ms / 1000
+                    sleep_interval = 0.05  # 50ms
+                    elapsed = 0
+                    while True:
+                        resp_list = []
+                        for stream_key, entry_id in zip(stream_keys, entry_ids):
+                            resp_list.append(xread(store, stream_key, entry_id))
+                        # Check if we got any new entries
+                        any_entries = any("*2\r\n" in r for r in resp_list)
+                        if any_entries or elapsed >= timeout_sec:
+                            break
+                        time.sleep(sleep_interval)
+                        elapsed += sleep_interval
+                else:
+                    resp_list = []
+                    for stream_key, entry_id in zip(stream_keys, entry_ids):
+                        resp_list.append(xread(store, stream_key, entry_id))
+                if not resp_list or (block_time_ms is not None and not any("*2\r\n" in r for r in resp_list)):
+                    response = "*-1\r\n"  # null array
+                else:
+                    response = f"*{len(resp_list)}\r\n" + "".join(resp_list)
                 response = response.encode()
 
 
