@@ -79,6 +79,11 @@ def handle_command(client: socket.socket, store: dict):
                 entry_id = lines[6]
                 fields = [lines[i] for i in range(8, len(lines),2)]
                 response = xadd(store, key, entry_id, fields).encode()
+            elif command == "XRANGE":
+                stream_key = lines[4]
+                start_id = lines[6]
+                end_id = lines[8]
+                response = xrange_cmd(store, stream_key, start_id, end_id).encode()
 
             else:
                 response = b"-ERR unknown command\r\n"
