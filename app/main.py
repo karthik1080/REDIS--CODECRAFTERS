@@ -77,8 +77,7 @@ def handle_command(client: socket.socket, store: dict):
             elif command == "XADD":
                 key = lines[4]
                 entry_id = lines[6]
-                fields = [lines[i] for i in range(8, len(lines),2)]  # all remaining are fields
-                print(fields, 'hi', lines)
+                fields = [lines[i] for i in range(8, len(lines),2)]
                 response = xadd(store, key, entry_id, fields).encode()
 
             else:

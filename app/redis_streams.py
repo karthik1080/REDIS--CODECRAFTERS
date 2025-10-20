@@ -43,21 +43,40 @@ def xadd(store: Dict, stream_key: str, entry_id: str, fields: List[str]) -> str:
     fields: list like [field1, value1, field2, value2, ...]
     Returns the entry ID as a RESP bulk string.
     """
+    if entry_id == "0-0":
+        return "-ERR The ID specified in XADD must be greater than 0-0\r\n"
+
     if stream_key not in store:
         store[stream_key] = []  # create a new stream
 
     if not isinstance(store[stream_key], list):
         return "-ERR wrong type\r\n"
+    if store[stream_key]:
+        last_entry_id = store[stream_key][-1]['id']
+        if not is_valid_id(entry_id, last_entry_id):
+            return "-ERR The ID specified in XADD is equal or smaller than the target stream top item\r\n"
 
     # Convert list of fields into a dictionary for this entry
     entry = {"id": entry_id}
     for i in range(0, len(fields), 2):
         key = fields[i]
-        print(key,'done',i)
         value = fields[i + 1] if i + 1 < len(fields) else ""
         entry[key] = value
     store[stream_key].append(entry)
-    print(store,'blah',entry)
 
     # Return the entry ID in RESP bulk string format
     return f"${len(entry_id)}\r\n{entry_id}\r\n"
+
+def is_valid_id(new_id: str, last_id: str) -> bool:
+    """
+    Return True if new_id > last_id
+    Both IDs are strings in format '<ms>-<seq>'
+    """
+    new_ms, new_seq = map(int, new_id.split('-'))
+    last_ms, last_seq = map(int, last_id.split('-'))
+
+    if new_ms > last_ms:
+        return True
+    if new_ms == last_ms and new_seq > last_seq:
+        return True
+    return False
