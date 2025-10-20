@@ -39,9 +39,13 @@ def lpop(store: dict, key: str, count: int = 1) -> str:
         return f"*0\r\n"
 
     popped = []
+    if count == 1:
+        value = store[key].pop(0)
+        return f"${len(value)}\r\n{value}\r\n"
     for _ in range(count):
         if store[key]:
             popped.append(store[key].pop(0))
+            print(popped)
 
     resp = f"*{len(popped)}\r\n"
     for item in popped:

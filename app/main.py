@@ -1,6 +1,6 @@
 import socket
 import threading
-from .redis_list import rpush, lpush, lpop, llen, lrange
+from .redis_list import rpush, lpush, lpop, llen, lrange, blpop
 
 def handle_command(client: socket.socket, store: dict):
     while True:
@@ -15,7 +15,7 @@ def handle_command(client: socket.socket, store: dict):
         if data.startswith("*"):
             lines = data.split("\r\n")
             command = lines[2].upper()
-
+            print(lines)
             # ---------------------- STRING COMMANDS ----------------------
             if command == "PING":
                 response = b"+PONG\r\n"
