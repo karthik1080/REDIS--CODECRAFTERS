@@ -137,17 +137,17 @@ def xrange_cmd(store, stream_key, start_id, end_id):
             response += f"${len(value)}\r\n{value}\r\n"
     return response
 
-def xread(store: Dict, stream_key: str, last_id: str) -> str:
+def xread(store: Dict, stream_key: str, entry_id: str) -> str:
     if stream_key not in store:
         return "*0\r\n"
 
     if not isinstance(store[stream_key], list):
         return "-ERR wrong type\r\n"
-
-    entries = [e for e in store[stream_key] if is_valid_id(e['id'], last_id)]
-
-    resp = ["*1\r\n"]
-    resp.append("*2\r\n")
+    entries = []
+    for e in store[stream_key]:
+        if is_valid_id(e['id'], entry_id):
+            entries.append(e)
+    resp = ["*2\r\n"]
     resp.append(f"${len(stream_key)}\r\n{stream_key}\r\n")
 
     resp.append(f"*{len(entries)}\r\n")

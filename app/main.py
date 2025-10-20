@@ -85,10 +85,14 @@ def handle_command(client: socket.socket, store: dict):
                 end_id = lines[8]
                 response = xrange_cmd(store, stream_key, start_id, end_id).encode()
             elif command == "XREAD":
-                remaining = lines[6:]
+                remaining = lines[5:]
+                print(remaining)
                 num_streams = len(remaining) // 4
-                stream_keys = remaining[:num_streams:2]
-                entry_ids = remaining[num_streams::2]
+                print(num_streams)
+                stream_keys = remaining[1:num_streams*2:2]
+                entry_ids = remaining[num_streams*2+1::2]
+                print(stream_keys)
+                print(entry_ids)
 
                 resp_list = []
                 for stream_key, entry_id in zip(stream_keys, entry_ids):
