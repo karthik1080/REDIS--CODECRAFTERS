@@ -2,19 +2,7 @@
 from typing import Dict, List
 import time
 def get_type(store: dict, key: str) -> str:
-    """
-    Return the type of value stored at key.
-    Supported Redis types:
-        - string
-        - list
-        - set
-        - zset
-        - hash
-        - stream
-        - vectorset
-        - none (if key doesn't exist)
-    RESP simple string encoded.
-    """
+
     if key not in store:
         return "+none\r\n"
 
@@ -43,9 +31,8 @@ def xadd(store: Dict, stream_key: str, entry_id: str, fields: List[str]) -> str:
     fields: list like [field1, value1, field2, value2, ...]
     Returns the entry ID as a RESP bulk string.
     """
-    # Ensure stream exists
     if stream_key not in store:
-        store[stream_key] = []  # create a new stream
+        store[stream_key] = []
 
     if not isinstance(store[stream_key], list):
         return "-ERR wrong type\r\n"
@@ -105,10 +92,7 @@ def xadd(store: Dict, stream_key: str, entry_id: str, fields: List[str]) -> str:
 
 
 def is_valid_id(new_id: str, last_id: str) -> bool:
-    """
-    Return True if new_id > last_id
-    Both IDs are strings in format '<ms>-<seq>'
-    """
+
     new_ms, new_seq = map(int, new_id.split('-'))
     last_ms, last_seq = map(int, last_id.split('-'))
 
@@ -117,3 +101,34 @@ def is_valid_id(new_id: str, last_id: str) -> bool:
     if new_ms == last_ms and new_seq > last_seq:
         return True
     return False
+
+def xrange_cmd(store, stream_key, start_id, end_id):
+
+    if stream_key not in store or not isinstance(store[stream_key], list):
+        return "*0\r\n"
+    if "-" not in start_id:
+        start_id = f"{start_id}-0"
+    if "-" not in end_id:
+        end_id = f"{end_id}-9999999999999"  # big seq for max
+
+    start_ms, start_seq = map(int, start_id.split('-'))
+    end_ms, end_seq = map(int, end_id.split('-'))
+
+    result_entries = []
+    for entry in store[stream_key]:
+        ms, seq = map(int, entry["id"].split('-'))
+        if (ms > start_ms or (ms == start_ms and seq >= start_seq)) and \
+           (ms < end_ms or (ms == end_ms and seq <= end_seq)):
+            result_entries.append(entry)
+
+    response = f"*{len(result_entries)}\r\n"
+    for entry in result_entries:
+        response += "*2\r\n"
+        response += f"${len(entry['id'])}\r\n{entry['id']}\r\n"
+        fields = [k for k in entry.keys() if k != "id"]
+        response += f"*{len(fields) * 2}\r\n"
+        for field in fields:
+            value = entry[field]
+            response += f"${len(field)}\r\n{field}\r\n"
+            response += f"${len(value)}\r\n{value}\r\n"
+    return response
