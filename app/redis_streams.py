@@ -53,10 +53,11 @@ def xadd(store: Dict, stream_key: str, entry_id: str, fields: List[str]) -> str:
     entry = {"id": entry_id}
     for i in range(0, len(fields), 2):
         key = fields[i]
+        print(key,'done',i)
         value = fields[i + 1] if i + 1 < len(fields) else ""
         entry[key] = value
-
     store[stream_key].append(entry)
+    print(store,'blah',entry)
 
     # Return the entry ID in RESP bulk string format
     return f"${len(entry_id)}\r\n{entry_id}\r\n"
