@@ -75,9 +75,13 @@ def handle_command(client: socket.socket, store: dict):
                 stop = int(lines[8])
                 response = lrange(store, key, start, stop).encode()
 
+            elif command == "BLPOP":
+                key = lines[4]
+                timeout = float(lines[6])  # timeout in seconds
+                response = blpop(store, key, timeout).encode()
+
             else:
                 response = b"-ERR unknown command\r\n"
-
             client.send(response)
 
         else:
