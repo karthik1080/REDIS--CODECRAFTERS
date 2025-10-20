@@ -1,6 +1,7 @@
 import socket
 import threading
 from .redis_list import rpush, lpush, lpop, llen, lrange, blpop
+from .redis_streams import get_type
 
 def handle_command(client: socket.socket, store: dict):
     while True:
@@ -69,6 +70,10 @@ def handle_command(client: socket.socket, store: dict):
                 key = lines[4]
                 timeout = float(lines[6])
                 response = blpop(store, key, timeout).encode()
+            # ---------------------- STREAM COMMANDS ----------------------
+            elif command == "TYPE":
+                key = lines[4]
+                response = get_type(store, key).encode()
 
             else:
                 response = b"-ERR unknown command\r\n"
