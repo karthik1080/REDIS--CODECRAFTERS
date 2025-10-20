@@ -51,10 +51,35 @@ def xadd(store: Dict, stream_key: str, entry_id: str, fields: List[str]) -> str:
 
     if not isinstance(store[stream_key], list):
         return "-ERR wrong type\r\n"
+
+    # Determine sequence number if auto-generated
+    time_part_str, seq_part_str = entry_id.split('-')
+    time_part = int(time_part_str)
+
+    if seq_part_str == "*":
+        # Auto-generate sequence number
+        if store[stream_key]:
+            last_entry_id = store[stream_key][-1]['id']
+            last_time, last_seq = map(int, last_entry_id.split('-'))
+            if last_time == time_part:
+                seq_part = last_seq + 1
+            else:
+                seq_part = 0 if time_part != 0 else 1
+        else:
+            # Stream is empty
+            seq_part = 0 if time_part != 0 else 1
+    else:
+        seq_part = int(seq_part_str)
+
+    # Construct final entry_id
+    entry_id = f"{time_part}-{seq_part}"
+
+    # Validate against last entry if stream not empty
     if store[stream_key]:
         last_entry_id = store[stream_key][-1]['id']
         if not is_valid_id(entry_id, last_entry_id):
             return "-ERR The ID specified in XADD is equal or smaller than the target stream top item\r\n"
+
 
     # Convert list of fields into a dictionary for this entry
     entry = {"id": entry_id}
