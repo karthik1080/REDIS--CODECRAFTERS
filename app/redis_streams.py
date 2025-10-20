@@ -109,7 +109,7 @@ def xrange_cmd(store, stream_key, start_id, end_id):
     if start_id == "-":
         start_id = "0-0"
     if end_id == "+":
-        end_id = "18446744073709551615-18446744073709551615"
+        end_id = f"{store[stream_key][-1]['id']}"
     if "-" not in start_id:
         start_id = f"{start_id}-0"
     if "-" not in end_id:
@@ -136,3 +136,27 @@ def xrange_cmd(store, stream_key, start_id, end_id):
             response += f"${len(field)}\r\n{field}\r\n"
             response += f"${len(value)}\r\n{value}\r\n"
     return response
+
+def xread(store: Dict, stream_key: str, last_id: str) -> str:
+    if stream_key not in store:
+        return "*0\r\n"
+
+    if not isinstance(store[stream_key], list):
+        return "-ERR wrong type\r\n"
+
+    entries = [e for e in store[stream_key] if is_valid_id(e['id'], last_id)]
+
+    resp = ["*1\r\n"]
+    resp.append("*2\r\n")
+    resp.append(f"${len(stream_key)}\r\n{stream_key}\r\n")
+
+    resp.append(f"*{len(entries)}\r\n")
+    for entry in entries:
+        resp.append(f"*2\r\n")
+        resp.append(f"${len(entry['id'])}\r\n{entry['id']}\r\n")
+        fields = [f for k,v in entry.items() if k != "id" for f in (k,v)]
+        resp.append(f"*{len(fields)}\r\n")
+        for f in fields:
+            resp.append(f"${len(str(f))}\r\n{f}\r\n")
+
+    return "".join(resp)# concats all the resp strings which are in the form of list into 1 proper string

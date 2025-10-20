@@ -1,7 +1,7 @@
 import socket
 import threading
 from .redis_list import rpush, lpush, lpop, llen, lrange, blpop
-from .redis_streams import get_type, xadd, xrange_cmd
+from .redis_streams import get_type, xadd, xrange_cmd, xread
 
 def handle_command(client: socket.socket, store: dict):
     while True:
@@ -84,6 +84,10 @@ def handle_command(client: socket.socket, store: dict):
                 start_id = lines[6]
                 end_id = lines[8]
                 response = xrange_cmd(store, stream_key, start_id, end_id).encode()
+            elif command == "XREAD":
+                stream_key = lines[6]
+                entry_id = lines[8]
+                response = xread(store, stream_key, entry_id).encode()
 
             else:
                 response = b"-ERR unknown command\r\n"
