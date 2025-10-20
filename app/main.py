@@ -77,10 +77,7 @@ def handle_command(client: socket.socket, store: dict):
 
             elif command == "BLPOP":
                 key = lines[4]
-                if len(lines) > 6:
-                    timeout = float(lines[6])
-                else:
-                    timeout = 0
+                timeout = float(lines[6])  # timeout in seconds
                 response = blpop(store, key, timeout).encode()
 
             else:
