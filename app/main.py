@@ -27,12 +27,14 @@ def handle_command(client: socket.socket, store: dict):
             elif command == "SET":
                 key = lines[4]
                 value = lines[6]
+                if len(lines) > 8 and lines[8].lower() == "px":
+                    ttl = int(lines[10])
+                    threading.Timer(ttl / 1000, store.pop, args=[key]).start()
                 store[key] = value
                 response = b"+OK\r\n"
-
             elif command == "GET":
                 key = lines[4]
-                value = store.get(key)
+                value = store.get(key, None)
                 if value is not None:
                     response = f"${len(value)}\r\n{value}\r\n".encode()
                 else:
