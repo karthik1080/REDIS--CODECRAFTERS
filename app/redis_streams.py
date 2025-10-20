@@ -1,6 +1,6 @@
 # redis_streams.py
 from typing import Dict, List
-
+import time
 def get_type(store: dict, key: str) -> str:
     """
     Return the type of value stored at key.
