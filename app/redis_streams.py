@@ -108,6 +108,8 @@ def xrange_cmd(store, stream_key, start_id, end_id):
         return "*0\r\n"
     if start_id == "-":
         start_id = "0-0"
+    if end_id == "+":
+        end_id = "18446744073709551615-18446744073709551615"
     if "-" not in start_id:
         start_id = f"{start_id}-0"
     if "-" not in end_id:
