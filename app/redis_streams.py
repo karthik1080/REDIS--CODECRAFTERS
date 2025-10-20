@@ -2,7 +2,7 @@
 
 #####################    STREAM OPERATIONS     #####################
 streams={}
-from app.resp import resp_encoder
+from .app import resp_encoder
 import threading
 import time
 
